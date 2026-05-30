@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cohort Deployment Map</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:system-ui,sans-serif;background:#111;color:#fff;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+#map-area{flex:1;position:relative;overflow:hidden;background:#1a1a2e;min-height:0}
+#map-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;display:none}
+#placeholder-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:rgba(255,255,255,.4);font-size:14px;pointer-events:none;text-align:center;padding:20px}
+#status-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;font-size:12px;padding:6px 14px;border-radius:20px;pointer-events:none;white-space:nowrap;transition:opacity .3s;z-index:15;max-width:90%;text-align:center}
+#status-bar.hidden{opacity:0}
+.map-token{position:absolute;transform:translate(-50%,-50%);z-index:5}
+.map-token-inner{padding:4px 8px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;border:2px solid rgba(255,255,255,.25);line-height:1.4}
+.map-token.selected .map-token-inner{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.5)}
+#bottom-panel{height:190px;min-height:190px;display:flex;flex-direction:column;background:#111;border-top:1px solid #333}
+#panel-header{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #2a2a2a;flex-shrink:0;flex-wrap:nowrap}
+#search-box{flex:1;min-width:0;padding:6px 8px;font-size:12px;border:1px solid #333;border-radius:6px;background:#1e1e1e;color:#fff;outline:none}
+#deployed-count{font-size:11px;color:#777;white-space:nowrap;flex-shrink:0}
+#cohort-list{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start}
+.cohort-token{padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.cohort-token .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.cohort-token.deployed{opacity:.25;pointer-events:none}
+.cohort-token.selected-sidebar{border-color:#fff !important;outline:2px solid rgba(255,255,255,.5)}
+.hdr-btn{padding:5px 9px;font-size:11px;background:none;border:1px solid #444;border-radius:5px;cursor:pointer;white-space:nowrap;flex-shrink:0;color:#ccc}
+label.hdr-btn{display:inline-block;position:relative;overflow:hidden}
+label.hdr-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0;width:100%;height:100%}
+</style>
+</head>
+<body>
+
+<div id="map-area">
+  <div id="placeholder-msg">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+    <span>Tap "Upload Map" below to begin</span>
+  </div>
+  <img id="map-img" alt="Campaign map">
+  <div id="status-bar" class="hidden"></div>
+</div>
+
+<div id="bottom-panel">
+  <div id="panel-header">
+    <input id="search-box" type="text" placeholder="Search…">
+    <span id="deployed-count">0 / 200</span>
+    <label class="hdr-btn" style="color:#8cf;border-color:#336">⬆ Map
+      <input type="file" id="file-input" accept="image/*">
+    </label>
+    <button class="hdr-btn" id="export-btn" style="color:#8cf;border-color:#336">⬇ Save</button>
+    <button class="hdr-btn" id="clear-btn">Clear</button>
+  </div>
+  <div id="cohort-list"></div>
+</div>
+
+<script>
+const COHORTS=[];
+[
+  [1,5,"Kel Gillineu","Commander","Elite"],
+  [6,10,"Kel Marsha Bog","Commander","Elite"],
+  [11,15,"Kel Ilad","Commander","Elite"],
+  [16,20,"Kel Elna Vrite","Commander","Elite"],
+  [21,25,"Kel Publae","Commander","Elite"],
+  [26,45,"Avec Des Cussin","Captain","Wooster"],
+  [46,65,"Lullinor Sement","Captain","B5"],
+  [66,85,"Alpha Crone","Captain","Nevan Heir"],
+  [86,105,"Dub Maados","Captain","Valash Beach"],
+  [106,115,"Goron Faero","Vice Captain","Pride"],
+  [116,125,"P. Whiskey","Vice Captain","Greed"],
+  [126,145,"Mama Charucci","Vice Captain","Envy"],
+  [146,165,"Pan","Vice Captain","Sloth"],
+  [166,174,"Aemma Nax","Vice Captain","Lust"],
+  [175,180,"Rath","Vice Captain","Wrath"],
+  [181,185,"Round Bone","Vice Captain","Gluttony"],
+  [186,190,"Gartem Tyne","Lieutenant","Recon Division"],
+  [191,200,"Qimmy Ron Mi","Lieutenant","Nevan Swamps"],
+].forEach(([s,e,cmd,rank,spec])=>{
+  for(let i=s;i<=e;i++) COHORTS.push({n:i,commander:cmd,rank,specialty:spec});
+});
+
+const RC={"Commander":{bg:"#7a0000",text:"#ffd0d0"},"Captain":{bg:"#162040",text:"#b8caff"},"Vice Captain":{bg:"#1e4010",text:"#c2f0a0"},"Lieutenant":{bg:"#3d3010",text:"#f0e0a0"}};
+const RD={"Commander":"#e24b4a","Captain":"#378add","Vice Captain":"#639922","Lieutenant":"#ba7517"};
+function lbl(n){return "C"+String(n).padStart(3,"0")}
+
+let placed={}, mapLoaded=false, selectedN=null, movingN=null, mapImageData=null;
+const mapArea=document.getElementById("map-area");
+const mapImg=document.getElementById("map-img");
+const listEl=document.getElementById("cohort-list");
+const countEl=document.getElementById("deployed-count");
+const statusBar=document.getElementById("status-bar");
+let statusTimer=null;
+
+function showStatus(msg,ms=2400){
+  statusBar.textContent=msg;
+  statusBar.classList.remove("hidden");
+  clearTimeout(statusTimer);
+  statusTimer=setTimeout(()=>statusBar.classList.add("hidden"),ms);
+}
+
+function loadPlaced(){
+  try{const p=localStorage.getItem("cmap-placed");if(p)placed=JSON.parse(p);}catch(e){placed={};}
+}
+function savePlaced(){
+  try{localStorage.setItem("cmap-placed",JSON.stringify(placed));}catch(e){}
+}
+
+function updateCount(){countEl.textContent=Object.keys(placed).length+" / 200";}
+
+function renderSidebar(filter){
+  filter=(filter||"").toLowerCase();
+  listEl.innerHTML="";
+  COHORTS.forEach(c=>{
+    const l=lbl(c.n);
+    if(filter&&!l.toLowerCase().includes(filter)&&!c.commander.toLowerCase().includes(filter))return;
+    const col=RC[c.rank]||{bg:"#333",text:"#fff"};
+    const div=document.createElement("div");
+    div.className="cohort-token"+(placed[c.n]?" deployed":"")+(selectedN===c.n?" selected-sidebar":"");
+    div.style.background=col.bg;
+    div.style.color=col.text;
+    const dot=document.createElement("div");
+    dot.className="dot";
+    dot.style.background=RD[c.rank]||"#888";
+    const span=document.createElement("span");
+    span.textContent=l;
+    div.appendChild(dot);
+    div.appendChild(span);
+    if(!placed[c.n]){
+      div.addEventListener("click",()=>selectCohort(c.n));
+      div.addEventListener("touchend",e=>{e.preventDefault();selectCohort(c.n);});
+    }
+    listEl.appendChild(div);
+  });
+}
+
+function selectCohort(n){
+  if(movingN!==null)return;
+  selectedN=(selectedN===n)?null:n;
+  renderSidebar(document.getElementById("search-box").value);
+  if(selectedN!==null){
+    showStatus("Tap the map to place "+lbl(n),4000);
+  } else {
+    statusBar.classList.add("hidden");
+  }
+}
+
+function placeTokenOnMap(cohortN,pctX,pctY,animate){
+  const c=COHORTS.find(x=>x.n===cohortN);
+  if(!c)return;
+  const col=RC[c.rank]||{bg:"#333",text:"#fff"};
+  const existing=mapArea.querySelector('.map-token[data-n="'+cohortN+'"]');
+  if(existing)existing.remove();
+  const wrap=document.createElement("div");
+  wrap.className="map-token";
+  wrap.dataset.n=cohortN;
+  wrap.style.left=pctX+"%";
+  wrap.style.top=pctY+"%";
+  const inner=document.createElement("div");
+  inner.className="map-token-inner";
+  inner.style.background=col.bg;
+  inner.style.color=col.text;
+  inner.textContent=lbl(cohortN);
+  wrap.appendChild(inner);
+
+  let tapCount=0,tapTimer=null;
+  function handleTap(e){
+    e.stopPropagation();
+    tapCount++;
+    if(tapCount===1){
+      tapTimer=setTimeout(function(){
+        tapCount=0;
+        if(movingN===cohortN){
+          movingN=null;wrap.classList.remove("selected");statusBar.classList.add("hidden");
+        } else {
+          movingN=cohortN;selectedN=null;
+          wrap.classList.add("selected");
+          showStatus("Tap map to move · Double-tap token to remove",3500);
+          renderSidebar(document.getElementById("search-box").value);
+        }
+      },260);
+    } else if(tapCount===2){
+      clearTimeout(tapTimer);tapCount=0;
+      wrap.remove();
+      delete placed[cohortN];
+      movingN=null;
+      savePlaced();
+      renderSidebar(document.getElementById("search-box").value);
+      updateCount();
+      showStatus(lbl(cohortN)+" returned to roster");
+    }
+  }
+  wrap.addEventListener("click",handleTap);
+  wrap.addEventListener("touchend",function(e){e.preventDefault();handleTap(e);});
+
+  if(animate){
+    wrap.style.opacity="0";
+    wrap.style.transform="translate(-50%,-50%) scale(0.4)";
+    mapArea.appendChild(wrap);
+    requestAnimationFrame(function(){
+      wrap.style.transition="opacity .18s,transform .18s";
+      wrap.style.opacity="1";
+      wrap.style.transform="translate(-50%,-50%) scale(1)";
+    });
+  } else {
+    mapArea.appendChild(wrap);
+  }
+}
+
+function getCoords(e){
+  const r=mapArea.getBoundingClientRect();
+  let cx,cy;
+  if(e.changedTouches&&e.changedTouches.length>0){cx=e.changedTouches[0].clientX;cy=e.changedTouches[0].clientY;}
+  else if(e.touches&&e.touches.length>0){cx=e.touches[0].clientX;cy=e.touches[0].clientY;}
+  else{cx=e.clientX;cy=e.clientY;}
+  return{x:((cx-r.left)/r.width)*100,y:((cy-r.top)/r.height)*100};
+}
+
+function handleMapTap(e){
+  if(!mapLoaded)return;
+  if(e.target.closest(".map-token")||e.target.closest("#panel-header"))return;
+  const{x,y}=getCoords(e);
+  if(movingN!==null){
+    placed[movingN]={x,y};
+    const wrap=mapArea.querySelector('.map-token[data-n="'+movingN+'"]');
+    if(wrap){wrap.style.left=x+"%";wrap.style.top=y+"%";wrap.classList.remove("selected");}
+    showStatus(lbl(movingN)+" moved");
+    movingN=null;savePlaced();return;
+  }
+  if(selectedN!==null){
+    placed[selectedN]={x,y};
+    placeTokenOnMap(selectedN,x,y,true);
+    showStatus(lbl(selectedN)+" placed ✓");
+    selectedN=null;savePlaced();
+    renderSidebar(document.getElementById("search-box").value);
+    updateCount();
+  }
+}
+
+mapArea.addEventListener("click",handleMapTap);
+mapArea.addEventListener("touchend",function(e){e.preventDefault();handleMapTap(e);});
+
+// FILE UPLOAD
+document.getElementById("file-input").addEventListener("change",function(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  showStatus("Loading map...",10000);
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    mapImageData=ev.target.result;
+    const tmp=new Image();
+    tmp.onload=function(){
+      mapImg.src=mapImageData;
+      mapImg.style.display="block";
+      document.getElementById("placeholder-msg").style.display="none";
+      mapLoaded=true;
+      showStatus("Map loaded! Tap a cohort to place it.");
+    };
+    tmp.onerror=function(){showStatus("Could not load image");};
+    tmp.src=mapImageData;
+  };
+  reader.onerror=function(){showStatus("Could not read file");};
+  reader.readAsDataURL(file);
+});
+
+// EXPORT
+document.getElementById("export-btn").addEventListener("click",function(){
+  if(!mapLoaded){showStatus("Upload a map first");return;}
+  showStatus("Saving...",5000);
+  const r=mapArea.getBoundingClientRect();
+  const W=r.width,H=r.height;
+  const S=2;
+  const canvas=document.createElement("canvas");
+  canvas.width=W*S;canvas.height=H*S;
+  const ctx=canvas.getContext("2d");
+  ctx.scale(S,S);
+  const bg=new Image();
+  bg.onload=function(){
+    ctx.fillStyle="#1a1a2e";
+    ctx.fillRect(0,0,W,H);
+    const iw=bg.naturalWidth,ih=bg.naturalHeight;
+    const sc=Math.min(W/iw,H/ih);
+    const dw=iw*sc,dh=ih*sc;
+    ctx.drawImage(bg,(W-dw)/2,(H-dh)/2,dw,dh);
+    mapArea.querySelectorAll(".map-token").forEach(function(tok){
+      const inner=tok.querySelector(".map-token-inner");
+      const tr=tok.getBoundingClientRect();
+      const ar=mapArea.getBoundingClientRect();
+      const tx=tr.left-ar.left+tr.width/2;
+      const ty=tr.top-ar.top+tr.height/2;
+      const st=window.getComputedStyle(inner);
+      const pw=tr.width+4,ph=tr.height+4;
+      ctx.fillStyle=st.backgroundColor;
+      ctx.beginPath();
+      ctx.roundRect(tx-pw/2,ty-ph/2,pw,ph,4);
+      ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,0.5)";
+      ctx.lineWidth=1.5;ctx.stroke();
+      ctx.fillStyle=st.color;
+      ctx.font="bold 11px system-ui,sans-serif";
+      ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.fillText(inner.textContent,tx,ty);
+    });
+    const link=document.createElement("a");
+    link.download="cohort-deployment.png";
+    link.href=canvas.toDataURL("image/png");
+    link.click();
+    showStatus("Saved! Check your downloads.");
+  };
+  bg.src=mapImageData;
+});
+
+// CLEAR
+document.getElementById("clear-btn").addEventListener("click",function(){
+  if(!confirm("Remove all tokens from map?"))return;
+  mapArea.querySelectorAll(".map-token").forEach(t=>t.remove());
+  placed={};movingN=null;selectedN=null;
+  savePlaced();
+  renderSidebar(document.getElementById("search-box").value);
+  updateCount();
+  showStatus("All tokens cleared");
+});
+
+// SEARCH
+document.getElementById("search-box").addEventListener("input",function(e){
+  renderSidebar(e.target.value);
+});
+
+// INIT
+loadPlaced();
+renderSidebar();
+updateCount();
+if(Object.keys(placed).length>0){
+  showStatus("Token positions restored — upload your map to continue",4000);
+}
+</script>
+</body>
+</html>
